@@ -231,7 +231,8 @@
           <textarea
             id="input-text"
             placeholder="Paste your synthetic AI text here, or drag and drop a .txt, .md, or .docx file..."
-            class="w-full flex-1 resize-none border-0 p-0 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-0 text-sm leading-relaxed min-h-[350px]"
+            class="w-full flex-1 resize-none border-0 p-0 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-0 text-sm leading-relaxed min-h-[350px] whitespace-pre-wrap font-sans"
+            style="tab-size: 4;"
           ></textarea>
           <!-- Drag-over drop message overlay -->
           <div id="drop-overlay" class="absolute inset-2 border-2 border-dashed border-brand-400 bg-brand-50/90 rounded-xl flex flex-col items-center justify-center gap-2 text-brand-700 hidden pointer-events-none z-10">
@@ -306,11 +307,12 @@
           <textarea
             id="output-text"
             placeholder="Your humanized, authentic prose will appear here after processing..."
-            class="w-full flex-1 resize-none border-0 p-0 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-0 text-sm leading-relaxed"
+            class="w-full flex-1 resize-none border-0 p-0 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-0 text-sm leading-relaxed whitespace-pre-wrap font-sans"
+            style="tab-size: 4;"
           ></textarea>
 
           <!-- Diff View Box (Hidden by default) -->
-          <div id="diff-container" class="hidden w-full flex-1 overflow-y-auto text-sm leading-relaxed whitespace-pre-wrap font-sans text-slate-800">
+          <div id="diff-container" class="hidden w-full flex-1 overflow-y-auto text-sm leading-relaxed whitespace-pre-wrap font-sans text-slate-800" style="tab-size: 4;">
             <p class="text-slate-400 italic">Run humanization to inspect differences.</p>
           </div>
         </div>
@@ -495,13 +497,13 @@
       const inText = inputTextEl.value.trim();
       const outText = outputTextEl.value.trim();
 
-      const inWords = inText ? inText.split(/\s+/).length : 0;
+      const inWords = inText ? inText.split(/\s+/).filter(Boolean).length : 0;
       const inChars = inText.length;
       inWordsEl.textContent = inWords.toLocaleString();
       inCharsEl.textContent = inChars.toLocaleString();
       inReadTimeEl.textContent = Math.ceil(inWords / 200) + 'm';
 
-      const outWords = outText ? outText.split(/\s+/).length : 0;
+      const outWords = outText ? outText.split(/\s+/).filter(Boolean).length : 0;
       const outChars = outText.length;
       outWordsEl.textContent = outWords.toLocaleString();
       outCharsEl.textContent = outChars.toLocaleString();
@@ -516,39 +518,41 @@
       }
     }
 
-    // Local Algorithmic Humanizer Engine
-    function runHeuristicHumanizer(rawText, tone, intensity) {
-      if (!rawText.trim()) return "";
+    // Single paragraph/line humanizer function
+    function humanizeLine(line, tone, intensity) {
+      if (!line.trim()) return line; // preserve blank lines and pure indentation
+      
+      // Preserve leading whitespace / indentation (tabs, spaces, list markers)
+      const leadingMatch = line.match(/^(\s*(?:[-*•]|\d+[.)])?\s*)/);
+      const leadingPrefix = leadingMatch ? leadingMatch[0] : "";
+      let coreText = line.slice(leadingPrefix.length);
 
-      let text = rawText;
+      if (!coreText.trim()) return line;
 
-      // 1. Remove stereotyped AI phrases and jargon
+      // 1. Stereotyped AI phrases & filler
       CLICHE_MAP.forEach(({ pattern, replacement }) => {
-        text = text.replace(pattern, replacement);
+        coreText = coreText.replace(pattern, replacement);
       });
 
-      // 2. Introduce natural contractions
+      // 2. Contractions
       CONTRACTIONS_MAP.forEach(({ pattern, replacement }) => {
-        text = text.replace(pattern, replacement);
+        coreText = coreText.replace(pattern, replacement);
       });
 
-      // 3. Sentence Structure & Burstiness Disruption
-      const sentences = text.match(/[^.!?]+[.!?]+(\s|$)|[^.!?]+$/g) || [text];
+      // 3. Sentence Structure & Burstiness Disruption within this paragraph
+      const sentences = coreText.match(/[^.!?]+[.!?]+(\s|$)|[^.!?]+$/g) || [coreText];
       const alteredSentences = [];
 
       for (let i = 0; i < sentences.length; i++) {
         let s = sentences[i].trim();
         if (!s) continue;
 
-        // Split overly uniform long sentences
         const words = s.split(/\s+/);
         if (words.length > 24 && intensity === 'aggressive') {
-          // Attempt to split at conjunctions (and, but, while, which)
           const splitPoint = s.search(/,\s+(and|but|while|which|although)\s+/i);
           if (splitPoint !== -1) {
             const firstHalf = s.slice(0, splitPoint) + ".";
             let secondHalf = s.slice(splitPoint + 2).trim();
-            // Capitalize starting word of new sentence
             secondHalf = secondHalf.charAt(0).toUpperCase() + secondHalf.slice(1);
             alteredSentences.push(firstHalf);
             alteredSentences.push(secondHalf);
@@ -556,30 +560,29 @@
           }
         }
 
-        // Apply tone nuances
-        if (tone === 'conversational' && i % 3 === 0 && words.length > 10) {
-          if (!s.startsWith("Honestly,") && !s.startsWith("In truth,")) {
-            // Light conversational framing on occasional clauses
-            if (intensity === 'aggressive') {
-              s = s.replace(/^([A-Z])/, (match) => `To be fair, ${match.toLowerCase()}`);
-            }
-          }
-        } else if (tone === 'punchy' && words.length > 16) {
+        if (tone === 'punchy' && words.length > 16) {
           s = s.replace(/; /g, ". ").replace(/, however, /gi, ". Even so, ");
         }
 
         alteredSentences.push(s);
       }
 
-      let result = alteredSentences.join(" ");
-
-      // Final polish: fix spacing and duplicate punctuation
-      result = result
+      let transformedCore = alteredSentences.join(" ")
         .replace(/\s{2,}/g, ' ')
         .replace(/\s+([.,!?;:])/g, '$1')
         .replace(/\bi\b/g, 'I');
 
-      return result.trim();
+      return leadingPrefix + transformedCore;
+    }
+
+    // Local Algorithmic Humanizer Engine (Preserves Document Structure and Alignment)
+    function runHeuristicHumanizer(rawText, tone, intensity) {
+      if (!rawText) return "";
+
+      // Split into lines to strictly preserve paragraphs, breaks, bullet points, and blank lines
+      const lines = rawText.split('\n');
+      const processedLines = lines.map(line => humanizeLine(line, tone, intensity));
+      return processedLines.join('\n');
     }
 
     // Google Gemini Direct Humanizer Engine
@@ -588,14 +591,15 @@
 
       const systemPrompt = `You are an elite human editor and writer. Your sole job is to rewrite AI-generated text so that it reads indistinguishably from an experienced, natural human writer.
 
-Guidelines:
-1. Drastically vary sentence length (burstiness). Intersperse short 3-6 word statements with longer, rhythmic observations.
-2. Purge all stereotypical AI vocabulary: "delve", "tapestry", "furthermore", "moreover", "in conclusion", "testament", "pivotal", "beacon", "foster", "holistic".
-3. Use active voice and natural phrasing. Tone style requested: ${tone}.
-4. Rewrite intensity: ${intensity}.
-5. Use contractions naturally (don't, can't, it's, wouldn't).
-6. Preserve 100% of factual substance, figures, quotes, and names.
-7. Return ONLY the rewritten text without preambles or notes.`;
+STRICT FORMATTING AND ALIGNMENT RULES:
+1. Maintain the EXACT line breaks, paragraph structure, indentation, list markers, bullet points, and overall document layout as the original.
+2. Drastically vary sentence length (burstiness). Intersperse short 3-6 word statements with longer rhythmic observations.
+3. Purge all stereotypical AI vocabulary: "delve", "tapestry", "furthermore", "moreover", "in conclusion", "testament", "pivotal", "beacon", "foster", "holistic".
+4. Use active voice and natural phrasing. Tone style requested: ${tone}.
+5. Rewrite intensity: ${intensity}.
+6. Use contractions naturally (don't, can't, it's, wouldn't).
+7. Preserve 100% of factual substance, figures, quotes, and names.
+8. Return ONLY the rewritten text without code fences, preambles, or explanations.`;
 
       const payload = {
         contents: [
@@ -626,7 +630,7 @@ Guidelines:
       const data = await response.json();
       let output = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
       // Strip markdown code fences if inadvertently returned
-      output = output.replace(/^```[a-z]*\n/i, '').replace(/\n```$/, '').trim();
+      output = output.replace(/^```[a-z]*\r?\n/i, '').replace(/\r?\n```$/, '').trim();
       return output;
     }
 
@@ -640,26 +644,37 @@ Guidelines:
         .replace(/'/g, "&#039;");
     }
 
-    // Generate word-level comparison HTML
+    // Generate word-level comparison HTML while strictly respecting newlines and indentation
     function buildWordDiff(original, humanized) {
-      const origWords = original.trim().split(/\s+/);
-      const newWords = humanized.trim().split(/\s+/);
+      const origWords = new Set(original.toLowerCase().match(/\b[a-z0-9']+\b/g) || []);
       
-      const setOrig = new Set(origWords.map(w => w.toLowerCase().replace(/[^a-z0-9]/g, '')));
-      
-      const diffHtml = newWords.map(word => {
-        const clean = word.toLowerCase().replace(/[^a-z0-9]/g, '');
-        if (!clean) return escapeHtml(word);
-        if (!setOrig.has(clean)) {
-          return `<span class="bg-emerald-100 text-emerald-900 font-medium px-1 py-0.5 rounded border border-emerald-200">${escapeHtml(word)}</span>`;
-        }
-        return escapeHtml(word);
-      }).join(' ');
+      const lines = humanized.split('\n');
+      const diffLines = lines.map(line => {
+        if (!line.trim()) return '&nbsp;';
+        
+        // Preserve leading spacing
+        const match = line.match(/^(\s+)/);
+        const leadingSpaces = match ? match[1].replace(/ /g, '&nbsp;').replace(/\t/g, '&nbsp;&nbsp;&nbsp;&nbsp;') : '';
+        const words = line.trim().split(/(\s+)/);
 
-      return diffHtml || '<p class="text-slate-400 italic">No differences detected.</p>';
+        const renderedLine = words.map(chunk => {
+          if (/^\s+$/.test(chunk)) {
+            return chunk.replace(/ /g, '&nbsp;').replace(/\t/g, '&nbsp;&nbsp;&nbsp;&nbsp;');
+          }
+          const clean = chunk.toLowerCase().replace(/[^a-z0-9']/g, '');
+          if (clean && !origWords.has(clean)) {
+            return `<span class="bg-emerald-100 text-emerald-900 font-medium px-1 py-0.5 rounded border border-emerald-200">${escapeHtml(chunk)}</span>`;
+          }
+          return escapeHtml(chunk);
+        }).join('');
+
+        return leadingSpaces + renderedLine;
+      });
+
+      return diffLines.join('<br>') || '<p class="text-slate-400 italic">No differences detected.</p>';
     }
 
-    // File Processing (TXT, MD, DOCX via mammoth.js)
+    // File Processing (TXT, MD, DOCX via mammoth.js) with structural integrity
     async function processSelectedFile(file) {
       if (!file) return;
 
@@ -671,11 +686,35 @@ Guidelines:
         let extractedContent = "";
 
         if (fileExt === 'docx') {
-          showToast("Extracting text from Word document...", "info");
+          showToast("Extracting layout and text from Word document...", "info");
           const arrayBuffer = await file.arrayBuffer();
           if (window.mammoth) {
-            const result = await window.mammoth.extractRawText({ arrayBuffer: arrayBuffer });
-            extractedContent = result.value || "";
+            // Use extractRawText or convertToHtml to keep original paragraph separators
+            const result = await window.mammoth.convertToHtml({ arrayBuffer: arrayBuffer });
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = result.value || "";
+            
+            // Format paragraphs, headers, and bullet items with preserved newlines
+            const textNodes = [];
+            tempDiv.childNodes.forEach(node => {
+              if (node.nodeType === Node.ELEMENT_NODE) {
+                const tag = node.tagName.toLowerCase();
+                const content = node.innerText || node.textContent || "";
+                if (tag === 'p' || tag.startsWith('h')) {
+                  textNodes.push(content);
+                } else if (tag === 'ul' || tag === 'ol') {
+                  node.querySelectorAll('li').forEach(li => {
+                    textNodes.push("• " + (li.innerText || li.textContent || ""));
+                  });
+                } else {
+                  textNodes.push(content);
+                }
+              } else if (node.nodeType === Node.TEXT_NODE && node.textContent.trim()) {
+                textNodes.push(node.textContent.trim());
+              }
+            });
+
+            extractedContent = textNodes.length > 0 ? textNodes.join('\n\n') : (await window.mammoth.extractRawText({ arrayBuffer: arrayBuffer })).value;
           } else {
             throw new Error("Mammoth library is not loaded.");
           }
@@ -686,19 +725,19 @@ Guidelines:
           return;
         }
 
-        inputTextEl.value = extractedContent.trim();
+        inputTextEl.value = extractedContent;
         fileInfoNameEl.textContent = fileName;
         fileInfoSizeEl.textContent = `(${fileSizeKB} KB)`;
         fileInfoBadgeEl.classList.remove('hidden');
         calculateMetrics();
-        showToast(`Loaded ${fileName} successfully!`, "success");
+        showToast(`Loaded ${fileName} with original layout!`, "success");
       } catch (err) {
         console.error("File parsing error:", err);
         showToast(`Failed to parse file: ${err.message}`, "error");
       }
     }
 
-    // File Download Handler (.txt, .md, .docx)
+    // File Download Handler (.txt, .md, .docx) strictly maintaining alignment
     function downloadOutputFile(format) {
       const text = outputTextEl.value;
       if (!text.trim()) {
@@ -712,20 +751,35 @@ Guidelines:
 
       if (format === 'md') {
         mimeType = "text/markdown;charset=utf-8";
+        blobData = text;
       } else if (format === 'docx') {
-        // Build valid HTML-based Office Word Document readable by Microsoft Word & LibreOffice
+        // Build Word-compliant HTML document with preserved alignment, margins, and line heights
         mimeType = "application/msword;charset=utf-8";
         extension = "doc";
+        
         const paragraphs = text
-          .split(/\n+/)
-          .map(p => '<p style="font-family: Arial, sans-serif; font-size: 11pt; line-height: 1.5;">' + escapeHtml(p) + '</p>')
+          .split('\n')
+          .map(line => {
+            if (!line.trim()) {
+              return '<p style="margin: 0; padding: 0; min-height: 14pt;">&nbsp;</p>';
+            }
+            // Check for leading spaces or list markers
+            let style = 'margin: 0 0 10pt 0; font-family: Calibri, Arial, sans-serif; font-size: 11pt; line-height: 1.4; color: #111827;';
+            if (/^\s*[-*•]/.test(line)) {
+              style += ' padding-left: 20pt; text-indent: -10pt;';
+            }
+            return '<p style="' + style + '">' + escapeHtml(line).replace(/  /g, '&nbsp;&nbsp;') + '</p>';
+          })
           .join('\n');
 
-        // Concatenate without literal opening HTML tag blocks that confuse in-page script parsers
         blobData = '\ufeff' + 
-          '<!DOCTYPE html>' +
-          '<html>' +
-          '<head><meta charset="utf-8"><title>Word Humanized Output</title></head>' +
+          '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">' +
+          '<head><meta charset="utf-8"><title>Word Humanized Output</title>' +
+          '<style>' +
+          '@page { size: 8.5in 11in; margin: 1in 1in 1in 1in; mso-header-margin: 0.5in; mso-footer-margin: 0.5in; }' +
+          'body { font-family: Calibri, Arial, sans-serif; font-size: 11pt; line-height: 1.4; }' +
+          '</style>' +
+          '</head>' +
           '<body>' + paragraphs + '</body>' +
           '</html>';
       }
