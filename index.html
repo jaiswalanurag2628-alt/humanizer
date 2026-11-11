@@ -1,0 +1,972 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Word Humanized — Transform AI Text to Natural Human Writing</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Google Fonts: Inter & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Mammoth.js for client-side Word .docx file parsing -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+  <!-- Tailwind Configuration -->
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+          colors: {
+            brand: {
+              50: '#f0f7ff',
+              100: '#e0effe',
+              200: '#b9dffe',
+              500: '#2563eb',
+              600: '#1d4ed8',
+              700: '#1e40af',
+              800: '#1e3a8a',
+            }
+          }
+        }
+      }
+    };
+  </script>
+  <style>
+    /* Custom Scrollbars */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #f1f5f9;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8;
+    }
+    /* Pulse animations */
+    @keyframes pulse-subtle {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.6; }
+    }
+    .animate-pulse-subtle {
+      animation: pulse-subtle 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-900 font-sans min-h-screen flex flex-col antialiased selection:bg-brand-500 selection:text-white">
+
+  <!-- Navigation Bar -->
+  <header class="border-b border-slate-200/80 bg-white/95 backdrop-blur sticky top-0 z-30 shadow-xs">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-600 to-indigo-600 flex items-center justify-center text-white shadow-md shadow-brand-500/20">
+          <i data-lucide="feather" class="w-5 h-5"></i>
+        </div>
+        <div>
+          <span class="text-lg font-bold tracking-tight bg-gradient-to-r from-slate-900 to-slate-700 bg-clip-text text-transparent">Word Humanized</span>
+          <span class="hidden sm:inline-block ml-2 px-2 py-0.5 text-[10px] font-semibold bg-brand-50 text-brand-700 border border-brand-200 rounded-full uppercase tracking-wider">Engine v2.1</span>
+        </div>
+      </div>
+
+      <!-- Action Nav Items -->
+      <div class="flex items-center gap-2 sm:gap-3">
+        <button id="btn-settings" type="button" class="p-2 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition-colors" title="Engine Settings / API Key">
+          <i data-lucide="settings" class="w-5 h-5"></i>
+        </button>
+        <button id="btn-sample" type="button" class="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors">
+          <i data-lucide="sparkles" class="w-3.5 h-3.5 text-amber-500"></i>
+          <span>Load AI Sample</span>
+        </button>
+        <button id="btn-clear" type="button" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-600 hover:text-rose-600 bg-slate-100 hover:bg-rose-50 rounded-lg transition-colors">
+          <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+          <span class="hidden sm:inline">Clear</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Notification Toast Container -->
+  <div id="toast-container" class="fixed top-20 right-4 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+  <!-- Settings Modal (For Gemini API Integration) -->
+  <div id="settings-modal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-100 transform transition-all">
+      <div class="flex items-center justify-between pb-4 border-b border-slate-100">
+        <div class="flex items-center gap-2.5">
+          <div class="p-2 bg-brand-50 text-brand-600 rounded-lg">
+            <i data-lucide="sliders" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <h3 class="font-bold text-slate-900">Engine Configuration</h3>
+            <p class="text-xs text-slate-500">Customize rewrite pipeline and direct API access</p>
+          </div>
+        </div>
+        <button id="close-settings" class="text-slate-400 hover:text-slate-600 p-1 rounded-lg">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <div class="mt-4 space-y-4 text-sm">
+        <div>
+          <label class="block font-medium text-slate-700 mb-1">Humanizer Execution Engine</label>
+          <select id="engine-mode" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-500">
+            <option value="heuristic">Built-in Offline Engine (Zero API Key Needed)</option>
+            <option value="gemini">Gemini Direct Engine (Deep Contextual Rewriting)</option>
+          </select>
+          <p class="text-[11px] text-slate-500 mt-1">The offline engine uses algorithmic burstiness variation, syntactic inversion, and idiom injection without making external requests.</p>
+        </div>
+
+        <div id="gemini-key-container" class="space-y-1 hidden">
+          <div class="flex items-center justify-between">
+            <label class="block font-medium text-slate-700">Google Gemini API Key</label>
+            <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" class="text-[11px] text-brand-600 hover:underline inline-flex items-center gap-0.5">
+              Get free key <i data-lucide="external-link" class="w-3 h-3"></i>
+            </a>
+          </div>
+          <input type="password" id="gemini-api-key" placeholder="AIzaSy..." class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-500">
+          <p class="text-[11px] text-slate-400">Stored strictly in your local browser's <code class="bg-slate-100 px-1 rounded">localStorage</code>. Never transmitted to third-party tracking servers.</p>
+        </div>
+
+        <div class="pt-2 flex justify-end gap-2">
+          <button id="btn-save-settings" class="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-xl font-medium text-xs shadow-md shadow-brand-500/20 transition-all">
+            Save Preferences
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Content Application -->
+  <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 flex flex-col gap-6">
+
+    <!-- Top Control Bar (Style & Humanizer Parameters) -->
+    <div class="bg-white rounded-2xl p-4 shadow-sm border border-slate-200/80 flex flex-wrap items-center justify-between gap-4">
+      <div class="flex flex-wrap items-center gap-4">
+        <!-- Tone Selector -->
+        <div class="flex items-center gap-2">
+          <span class="text-xs font-semibold uppercase tracking-wider text-slate-500 flex items-center gap-1">
+            <i data-lucide="message-square" class="w-3.5 h-3.5"></i> Tone:
+          </span>
+          <select id="tone-select" class="text-xs font-medium bg-slate-100 hover:bg-slate-200 border-0 rounded-lg px-3 py-2 text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-500 transition-colors">
+            <option value="conversational">Conversational & Natural</option>
+            <option value="professional">Professional & Crisp</option>
+            <option value="punchy">Punchy & High Burstiness</option>
+            <option value="academic">Academic yet Human</option>
+          </select>
+        </div>
+
+        <!-- Humanization Intensity -->
+        <div class="flex items-center gap-2">
+          <span class="text-xs font-semibold uppercase tracking-wider text-slate-500 flex items-center gap-1">
+            <i data-lucide="flame" class="w-3.5 h-3.5"></i> Intensity:
+          </span>
+          <div class="inline-flex rounded-lg bg-slate-100 p-0.5 text-xs font-medium text-slate-600">
+            <button data-intensity="balanced" class="intensity-btn px-2.5 py-1 rounded-md bg-white text-slate-900 shadow-2xs font-semibold">Balanced</button>
+            <button data-intensity="aggressive" class="intensity-btn px-2.5 py-1 rounded-md text-slate-600 hover:text-slate-900">Aggressive</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Main Action Button -->
+      <div class="flex items-center gap-3 w-full sm:w-auto">
+        <button id="btn-humanize" type="button" class="w-full sm:w-auto px-6 py-2.5 bg-gradient-to-r from-brand-600 to-indigo-600 hover:from-brand-700 hover:to-indigo-700 text-white rounded-xl font-semibold text-xs sm:text-sm shadow-md shadow-brand-500/25 hover:shadow-lg hover:shadow-brand-500/30 active:scale-[0.99] transition-all flex items-center justify-center gap-2">
+          <i data-lucide="wand-2" class="w-4 h-4"></i>
+          <span id="btn-humanize-text">Humanize Content</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Dual-Pane Workspace Grid -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 flex-1 items-stretch">
+
+      <!-- LEFT PANE: Source AI Input -->
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 flex flex-col overflow-hidden focus-within:ring-2 focus-within:ring-brand-500/30 transition-all">
+        <!-- Pane Header -->
+        <div class="px-4 py-3 bg-slate-50/70 border-b border-slate-200 flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-amber-500"></span>
+            <h2 class="text-xs font-bold uppercase tracking-wider text-slate-700">AI-Generated Source</h2>
+          </div>
+          <div class="flex items-center gap-2">
+            <!-- Hidden File Input -->
+            <input type="file" id="file-upload-input" accept=".txt,.md,.markdown,.docx" class="hidden">
+            <!-- Browse File Button -->
+            <button id="btn-browse-file" type="button" class="text-xs text-slate-600 hover:text-brand-600 bg-white border border-slate-200 hover:border-brand-300 font-medium px-2 py-1 rounded-lg inline-flex items-center gap-1.5 shadow-2xs transition-colors">
+              <i data-lucide="upload" class="w-3.5 h-3.5 text-brand-600"></i>
+              <span>Upload (.txt, .md, .docx)</span>
+            </button>
+            <button id="btn-paste" class="text-xs text-brand-600 hover:text-brand-700 font-medium inline-flex items-center gap-1">
+              <i data-lucide="clipboard" class="w-3.5 h-3.5"></i>
+              <span>Paste</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- File Upload Banner (shows when file loaded) -->
+        <div id="file-info-badge" class="hidden mx-4 mt-3 px-3 py-1.5 bg-brand-50 border border-brand-200 rounded-xl text-xs flex items-center justify-between text-brand-800">
+          <div class="flex items-center gap-2 truncate">
+            <i data-lucide="file-check" class="w-3.5 h-3.5 text-brand-600 shrink-0"></i>
+            <span id="file-info-name" class="font-medium truncate">document.docx</span>
+            <span id="file-info-size" class="text-brand-600 text-[10px] shrink-0 font-mono">(0 KB)</span>
+          </div>
+          <button id="btn-remove-file" type="button" class="text-brand-600 hover:text-rose-600 ml-2">
+            <i data-lucide="x" class="w-3.5 h-3.5"></i>
+          </button>
+        </div>
+
+        <!-- Textarea (with Drag & Drop Support) -->
+        <div id="drop-zone" class="relative flex-1 p-4 flex flex-col transition-all">
+          <textarea
+            id="input-text"
+            placeholder="Paste your synthetic AI text here, or drag and drop a .txt, .md, or .docx file..."
+            class="w-full flex-1 resize-none border-0 p-0 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-0 text-sm leading-relaxed min-h-[350px]"
+          ></textarea>
+          <!-- Drag-over drop message overlay -->
+          <div id="drop-overlay" class="absolute inset-2 border-2 border-dashed border-brand-400 bg-brand-50/90 rounded-xl flex flex-col items-center justify-center gap-2 text-brand-700 hidden pointer-events-none z-10">
+            <i data-lucide="file-up" class="w-8 h-8 animate-bounce"></i>
+            <span class="text-xs font-semibold">Drop .txt, .md, or .docx file to import</span>
+          </div>
+        </div>
+
+        <!-- Pane Footer Statistics -->
+        <div class="px-4 py-2.5 bg-slate-50/60 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+          <div class="flex items-center gap-4">
+            <span><strong id="in-words" class="text-slate-800 font-mono">0</strong> words</span>
+            <span><strong id="in-chars" class="text-slate-800 font-mono">0</strong> characters</span>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <i data-lucide="clock" class="w-3.5 h-3.5 text-slate-400"></i>
+            <span>Est. read: <span id="in-reading-time">0m</span></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- RIGHT PANE: Humanized Output -->
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 flex flex-col overflow-hidden focus-within:ring-2 focus-within:ring-brand-500/30 transition-all">
+        <!-- Pane Header -->
+        <div class="px-4 py-3 bg-slate-50/70 border-b border-slate-200 flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+            <h2 class="text-xs font-bold uppercase tracking-wider text-slate-700">Humanized Output</h2>
+          </div>
+
+          <!-- View Switcher (Clean vs Diff), Copy & Download Dropdown -->
+          <div class="flex items-center gap-2">
+            <div class="inline-flex rounded-lg bg-slate-200/70 p-0.5 text-xs font-medium text-slate-600">
+              <button id="view-clean-btn" class="px-2 py-0.5 rounded-md bg-white text-slate-900 shadow-2xs">Clean</button>
+              <button id="view-diff-btn" class="px-2 py-0.5 rounded-md text-slate-600 hover:text-slate-900">Diff</button>
+            </div>
+            
+            <button id="btn-copy" class="text-xs text-brand-600 hover:text-brand-700 font-medium inline-flex items-center gap-1 px-1">
+              <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+              <span id="copy-label">Copy</span>
+            </button>
+
+            <!-- Download Dropdown -->
+            <div class="relative inline-block text-left">
+              <button id="btn-download-menu" type="button" class="text-xs text-emerald-700 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100/80 border border-emerald-200 font-medium px-2 py-1 rounded-lg inline-flex items-center gap-1 shadow-2xs transition-colors">
+                <i data-lucide="download" class="w-3.5 h-3.5 text-emerald-600"></i>
+                <span>Download</span>
+                <i data-lucide="chevron-down" class="w-3 h-3 text-emerald-600"></i>
+              </button>
+
+              <div id="download-dropdown" class="hidden absolute right-0 mt-1 w-44 rounded-xl bg-white shadow-lg border border-slate-200 py-1 z-20">
+                <button id="download-txt" class="w-full text-left px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2">
+                  <i data-lucide="file-text" class="w-3.5 h-3.5 text-slate-500"></i>
+                  <span>Download as .txt</span>
+                </button>
+                <button id="download-md" class="w-full text-left px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2">
+                  <i data-lucide="file-code" class="w-3.5 h-3.5 text-slate-500"></i>
+                  <span>Download as .md</span>
+                </button>
+                <button id="download-docx" class="w-full text-left px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2">
+                  <i data-lucide="file" class="w-3.5 h-3.5 text-blue-600"></i>
+                  <span>Download as .docx</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Textarea / Diff Display -->
+        <div class="relative flex-1 p-4 flex flex-col min-h-[350px]">
+          <!-- Standard Editable Output Area -->
+          <textarea
+            id="output-text"
+            placeholder="Your humanized, authentic prose will appear here after processing..."
+            class="w-full flex-1 resize-none border-0 p-0 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-0 text-sm leading-relaxed"
+          ></textarea>
+
+          <!-- Diff View Box (Hidden by default) -->
+          <div id="diff-container" class="hidden w-full flex-1 overflow-y-auto text-sm leading-relaxed whitespace-pre-wrap font-sans text-slate-800">
+            <p class="text-slate-400 italic">Run humanization to inspect differences.</p>
+          </div>
+        </div>
+
+        <!-- Pane Footer Statistics -->
+        <div class="px-4 py-2.5 bg-slate-50/60 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+          <div class="flex items-center gap-4">
+            <span><strong id="out-words" class="text-slate-800 font-mono">0</strong> words</span>
+            <span><strong id="out-chars" class="text-slate-800 font-mono">0</strong> characters</span>
+          </div>
+          <div class="flex items-center gap-3">
+            <span id="stat-variance" class="hidden text-brand-600 font-medium">Variance: +0%</span>
+            <div class="flex items-center gap-1.5">
+              <i data-lucide="clock" class="w-3.5 h-3.5 text-slate-400"></i>
+              <span>Est. read: <span id="out-reading-time">0m</span></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Engine Mechanics Info Footer Banner -->
+    <div class="bg-gradient-to-r from-slate-900 to-indigo-950 text-white rounded-2xl p-5 shadow-sm border border-slate-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+      <div class="space-y-1">
+        <h4 class="text-sm font-semibold flex items-center gap-2 text-indigo-200">
+          <i data-lucide="shield-check" class="w-4 h-4 text-emerald-400"></i>
+          How Word Humanized Disrupts Detection
+        </h4>
+        <p class="text-xs text-slate-300 max-w-2xl leading-relaxed">
+          AI detectors look for <em>perplexity</em> (token probabilities) and <em>burstiness</em> (sentence length uniformity). Word Humanized breaks stereotypical transition cliches, injects rhetorical pauses, varies sentence cadences, and expands idioms.
+        </p>
+      </div>
+      <div class="flex items-center gap-4 shrink-0 text-xs font-mono text-indigo-300 bg-white/5 px-3 py-2 rounded-xl border border-white/10">
+        <span>High Burstiness: <strong class="text-emerald-400">Active</strong></span>
+        <span>|</span>
+        <span>Perplexity Boost: <strong class="text-emerald-400">Enabled</strong></span>
+      </div>
+    </div>
+  </main>
+
+  <!-- Application Logic -->
+  <script>
+    // Initialize Lucide Icons
+    lucide.createIcons();
+
+    // Default Sample AI Text
+    const SAMPLE_AI_TEXT = `In today's fast-paced digital era, it is essential to delve into the transformative realm of artificial intelligence. Furthermore, this revolutionary paradigm serves as a testament to human innovation, playing a pivotal role in shaping modern productivity. In conclusion, navigating this intricate tapestry of computational advancements is paramount for fostering sustainable development across diverse industries.`;
+
+    // Dictionary of stereotypical AI markers & nuanced conversational replacements
+    const CLICHE_MAP = [
+      { pattern: /\bIn today's fast-paced (digital )?(world|era),?\b/gi, replacement: "Today," },
+      { pattern: /\bIn today's landscape,?\b/gi, replacement: "Right now," },
+      { pattern: /\bit is essential to delve into\b/gi, replacement: "we should look at" },
+      { pattern: /\bdelve(s)? into\b/gi, replacement: "explore$1" },
+      { pattern: /\bdelving into\b/gi, replacement: "exploring" },
+      { pattern: /\bserves as a testament to\b/gi, replacement: "shows" },
+      { pattern: /\ba testament to\b/gi, replacement: "proof of" },
+      { pattern: /\bplays a (pivotal|vital|crucial|key) role in\b/gi, replacement: "directly shapes" },
+      { pattern: /\bintricate tapestry( of)?\b/gi, replacement: "mix of" },
+      { pattern: /\btapestry of\b/gi, replacement: "web of" },
+      { pattern: /\bfostering sustainable\b/gi, replacement: "building lasting" },
+      { pattern: /\bfoster(ing)?\b/gi, replacement: "encourag$1" },
+      { pattern: /\bIn conclusion,?\b/gi, replacement: "All in all," },
+      { pattern: /\bTo conclude,?\b/gi, replacement: "Ultimately," },
+      { pattern: /\bFurthermore,?\b/gi, replacement: "Also," },
+      { pattern: /\bMoreover,?\b/gi, replacement: "On top of that," },
+      { pattern: /\bIt is worth noting that\b/gi, replacement: "Notice that" },
+      { pattern: /\bIt is important to remember that\b/gi, replacement: "Remember," },
+      { pattern: /\bparamount\b/gi, replacement: "critical" },
+      { pattern: /\bbeacon of\b/gi, replacement: "guide for" },
+      { pattern: /\bholistic approach\b/gi, replacement: "complete picture" },
+      { pattern: /\bmultifaceted\b/gi, replacement: "layered" },
+      { pattern: /\butilize(d|s)?\b/gi, replacement: "use$1" },
+      { pattern: /\butilization\b/gi, replacement: "use" },
+      { pattern: /\bfacilitate(d|s)?\b/gi, replacement: "help$1" },
+      { pattern: /\bunderscores\b/gi, replacement: "highlights" },
+      { pattern: /\bnot only\b(.*?)\bbut also\b/gi, replacement: "$1 and also" }
+    ];
+
+    // Contraction Map for natural cadence
+    const CONTRACTIONS_MAP = [
+      { pattern: /\bdo not\b/gi, replacement: "don't" },
+      { pattern: /\bcannot\b/gi, replacement: "can't" },
+      { pattern: /\bwill not\b/gi, replacement: "won't" },
+      { pattern: /\bit is\b/gi, replacement: "it's" },
+      { pattern: /\bthere is\b/gi, replacement: "there's" },
+      { pattern: /\bwe are\b/gi, replacement: "we're" },
+      { pattern: /\bthey are\b/gi, replacement: "they're" },
+      { pattern: /\bshould not\b/gi, replacement: "shouldn't" },
+      { pattern: /\bwould not\b/gi, replacement: "wouldn't" }
+    ];
+
+    // State
+    let currentIntensity = 'balanced';
+    let currentView = 'clean'; // 'clean' or 'diff'
+
+    // DOM Elements
+    const inputTextEl = document.getElementById('input-text');
+    const outputTextEl = document.getElementById('output-text');
+    const diffContainerEl = document.getElementById('diff-container');
+    const inWordsEl = document.getElementById('in-words');
+    const inCharsEl = document.getElementById('in-chars');
+    const inReadTimeEl = document.getElementById('in-reading-time');
+    const outWordsEl = document.getElementById('out-words');
+    const outCharsEl = document.getElementById('out-chars');
+    const outReadTimeEl = document.getElementById('out-reading-time');
+    const statVarianceEl = document.getElementById('stat-variance');
+    const fileUploadInputEl = document.getElementById('file-upload-input');
+    const btnBrowseFileEl = document.getElementById('btn-browse-file');
+    const fileInfoBadgeEl = document.getElementById('file-info-badge');
+    const fileInfoNameEl = document.getElementById('file-info-name');
+    const fileInfoSizeEl = document.getElementById('file-info-size');
+    const btnRemoveFileEl = document.getElementById('btn-remove-file');
+    const dropZoneEl = document.getElementById('drop-zone');
+    const dropOverlayEl = document.getElementById('drop-overlay');
+    const btnDownloadMenuEl = document.getElementById('btn-download-menu');
+    const downloadDropdownEl = document.getElementById('download-dropdown');
+    const engineModeEl = document.getElementById('engine-mode');
+    const geminiKeyContainerEl = document.getElementById('gemini-key-container');
+    const geminiApiKeyEl = document.getElementById('gemini-api-key');
+    const toneSelectEl = document.getElementById('tone-select');
+    const btnHumanizeEl = document.getElementById('btn-humanize');
+    const btnHumanizeTextEl = document.getElementById('btn-humanize-text');
+
+    // Load persisted settings
+    function loadSettings() {
+      const savedEngine = localStorage.getItem('wh_engine') || 'heuristic';
+      const savedKey = localStorage.getItem('wh_gemini_key') || '';
+      engineModeEl.value = savedEngine;
+      geminiApiKeyEl.value = savedKey;
+      if (savedEngine === 'gemini') {
+        geminiKeyContainerEl.classList.remove('hidden');
+      }
+    }
+
+    // Save Settings
+    function saveSettings() {
+      localStorage.setItem('wh_engine', engineModeEl.value);
+      localStorage.setItem('wh_gemini_key', geminiApiKeyEl.value.trim());
+      showToast("Preferences saved successfully!", "success");
+      document.getElementById('settings-modal').classList.add('hidden');
+    }
+
+    // Toast Generator
+    function showToast(message, type = 'info') {
+      const toastContainer = document.getElementById('toast-container');
+      const toast = document.createElement('div');
+      
+      let bg = "bg-slate-900 text-white";
+      let icon = "info";
+      if (type === 'success') {
+        bg = "bg-emerald-600 text-white";
+        icon = "check-circle";
+      } else if (type === 'warn') {
+        bg = "bg-amber-600 text-white";
+        icon = "alert-triangle";
+      } else if (type === 'error') {
+        bg = "bg-rose-600 text-white";
+        icon = "alert-circle";
+      }
+
+      toast.className = `${bg} px-4 py-2.5 rounded-xl shadow-lg flex items-center gap-2 text-xs font-medium transform transition-all duration-300 opacity-0 translate-y-2 pointer-events-auto max-w-sm`;
+      toast.innerHTML = `<i data-lucide="${icon}" class="w-4 h-4 shrink-0"></i><span>${message}</span>`;
+      
+      toastContainer.appendChild(toast);
+      lucide.createIcons();
+
+      // Trigger transition
+      setTimeout(() => {
+        toast.classList.remove('opacity-0', 'translate-y-2');
+      }, 10);
+
+      // Dismiss
+      setTimeout(() => {
+        toast.classList.add('opacity-0', '-translate-y-2');
+        setTimeout(() => toast.remove(), 300);
+      }, 3500);
+    }
+
+    // Compute Text Metrics
+    function calculateMetrics() {
+      const inText = inputTextEl.value.trim();
+      const outText = outputTextEl.value.trim();
+
+      const inWords = inText ? inText.split(/\s+/).length : 0;
+      const inChars = inText.length;
+      inWordsEl.textContent = inWords.toLocaleString();
+      inCharsEl.textContent = inChars.toLocaleString();
+      inReadTimeEl.textContent = Math.ceil(inWords / 200) + 'm';
+
+      const outWords = outText ? outText.split(/\s+/).length : 0;
+      const outChars = outText.length;
+      outWordsEl.textContent = outWords.toLocaleString();
+      outCharsEl.textContent = outChars.toLocaleString();
+      outReadTimeEl.textContent = Math.ceil(outWords / 200) + 'm';
+
+      if (inWords > 0 && outWords > 0) {
+        const diff = Math.round(((outWords - inWords) / inWords) * 100);
+        statVarianceEl.classList.remove('hidden');
+        statVarianceEl.textContent = `Variance: ${diff >= 0 ? '+' : ''}${diff}%`;
+      } else {
+        statVarianceEl.classList.add('hidden');
+      }
+    }
+
+    // Local Algorithmic Humanizer Engine
+    function runHeuristicHumanizer(rawText, tone, intensity) {
+      if (!rawText.trim()) return "";
+
+      let text = rawText;
+
+      // 1. Remove stereotyped AI phrases and jargon
+      CLICHE_MAP.forEach(({ pattern, replacement }) => {
+        text = text.replace(pattern, replacement);
+      });
+
+      // 2. Introduce natural contractions
+      CONTRACTIONS_MAP.forEach(({ pattern, replacement }) => {
+        text = text.replace(pattern, replacement);
+      });
+
+      // 3. Sentence Structure & Burstiness Disruption
+      const sentences = text.match(/[^.!?]+[.!?]+(\s|$)|[^.!?]+$/g) || [text];
+      const alteredSentences = [];
+
+      for (let i = 0; i < sentences.length; i++) {
+        let s = sentences[i].trim();
+        if (!s) continue;
+
+        // Split overly uniform long sentences
+        const words = s.split(/\s+/);
+        if (words.length > 24 && intensity === 'aggressive') {
+          // Attempt to split at conjunctions (and, but, while, which)
+          const splitPoint = s.search(/,\s+(and|but|while|which|although)\s+/i);
+          if (splitPoint !== -1) {
+            const firstHalf = s.slice(0, splitPoint) + ".";
+            let secondHalf = s.slice(splitPoint + 2).trim();
+            // Capitalize starting word of new sentence
+            secondHalf = secondHalf.charAt(0).toUpperCase() + secondHalf.slice(1);
+            alteredSentences.push(firstHalf);
+            alteredSentences.push(secondHalf);
+            continue;
+          }
+        }
+
+        // Apply tone nuances
+        if (tone === 'conversational' && i % 3 === 0 && words.length > 10) {
+          if (!s.startsWith("Honestly,") && !s.startsWith("In truth,")) {
+            // Light conversational framing on occasional clauses
+            if (intensity === 'aggressive') {
+              s = s.replace(/^([A-Z])/, (match) => `To be fair, ${match.toLowerCase()}`);
+            }
+          }
+        } else if (tone === 'punchy' && words.length > 16) {
+          s = s.replace(/; /g, ". ").replace(/, however, /gi, ". Even so, ");
+        }
+
+        alteredSentences.push(s);
+      }
+
+      let result = alteredSentences.join(" ");
+
+      // Final polish: fix spacing and duplicate punctuation
+      result = result
+        .replace(/\s{2,}/g, ' ')
+        .replace(/\s+([.,!?;:])/g, '$1')
+        .replace(/\bi\b/g, 'I');
+
+      return result.trim();
+    }
+
+    // Google Gemini Direct Humanizer Engine
+    async function runGeminiHumanizer(rawText, apiKey, tone, intensity) {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+
+      const systemPrompt = `You are an elite human editor and writer. Your sole job is to rewrite AI-generated text so that it reads indistinguishably from an experienced, natural human writer.
+
+Guidelines:
+1. Drastically vary sentence length (burstiness). Intersperse short 3-6 word statements with longer, rhythmic observations.
+2. Purge all stereotypical AI vocabulary: "delve", "tapestry", "furthermore", "moreover", "in conclusion", "testament", "pivotal", "beacon", "foster", "holistic".
+3. Use active voice and natural phrasing. Tone style requested: ${tone}.
+4. Rewrite intensity: ${intensity}.
+5. Use contractions naturally (don't, can't, it's, wouldn't).
+6. Preserve 100% of factual substance, figures, quotes, and names.
+7. Return ONLY the rewritten text without preambles or notes.`;
+
+      const payload = {
+        contents: [
+          {
+            role: "user",
+            parts: [
+              { text: `${systemPrompt}\n\nOriginal Text:\n${rawText}` }
+            ]
+          }
+        ],
+        generationConfig: {
+          temperature: intensity === 'aggressive' ? 0.92 : 0.82,
+          topP: 0.95,
+        }
+      };
+
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error?.message || `API error code ${response.status}`);
+      }
+
+      const data = await response.json();
+      let output = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+      // Strip markdown code fences if inadvertently returned
+      output = output.replace(/^```[a-z]*\n/i, '').replace(/\n```$/, '').trim();
+      return output;
+    }
+
+    // HTML escape utility
+    function escapeHtml(text) {
+      return text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    // Generate word-level comparison HTML
+    function buildWordDiff(original, humanized) {
+      const origWords = original.trim().split(/\s+/);
+      const newWords = humanized.trim().split(/\s+/);
+      
+      const setOrig = new Set(origWords.map(w => w.toLowerCase().replace(/[^a-z0-9]/g, '')));
+      
+      const diffHtml = newWords.map(word => {
+        const clean = word.toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (!clean) return escapeHtml(word);
+        if (!setOrig.has(clean)) {
+          return `<span class="bg-emerald-100 text-emerald-900 font-medium px-1 py-0.5 rounded border border-emerald-200">${escapeHtml(word)}</span>`;
+        }
+        return escapeHtml(word);
+      }).join(' ');
+
+      return diffHtml || '<p class="text-slate-400 italic">No differences detected.</p>';
+    }
+
+    // File Processing (TXT, MD, DOCX via mammoth.js)
+    async function processSelectedFile(file) {
+      if (!file) return;
+
+      const fileName = file.name;
+      const fileExt = fileName.split('.').pop().toLowerCase();
+      const fileSizeKB = (file.size / 1024).toFixed(1);
+
+      try {
+        let extractedContent = "";
+
+        if (fileExt === 'docx') {
+          showToast("Extracting text from Word document...", "info");
+          const arrayBuffer = await file.arrayBuffer();
+          if (window.mammoth) {
+            const result = await window.mammoth.extractRawText({ arrayBuffer: arrayBuffer });
+            extractedContent = result.value || "";
+          } else {
+            throw new Error("Mammoth library is not loaded.");
+          }
+        } else if (fileExt === 'txt' || fileExt === 'md' || fileExt === 'markdown') {
+          extractedContent = await file.text();
+        } else {
+          showToast("Unsupported file type. Please upload .txt, .md, or .docx", "warn");
+          return;
+        }
+
+        inputTextEl.value = extractedContent.trim();
+        fileInfoNameEl.textContent = fileName;
+        fileInfoSizeEl.textContent = `(${fileSizeKB} KB)`;
+        fileInfoBadgeEl.classList.remove('hidden');
+        calculateMetrics();
+        showToast(`Loaded ${fileName} successfully!`, "success");
+      } catch (err) {
+        console.error("File parsing error:", err);
+        showToast(`Failed to parse file: ${err.message}`, "error");
+      }
+    }
+
+    // File Download Handler (.txt, .md, .docx)
+    function downloadOutputFile(format) {
+      const text = outputTextEl.value;
+      if (!text.trim()) {
+        showToast("No humanized text to download. Humanize your content first.", "warn");
+        return;
+      }
+
+      let mimeType = "text/plain;charset=utf-8";
+      let blobData = text;
+      let extension = format;
+
+      if (format === 'md') {
+        mimeType = "text/markdown;charset=utf-8";
+      } else if (format === 'docx') {
+        // Build valid HTML-based Office Word Document readable by Microsoft Word & LibreOffice
+        mimeType = "application/msword;charset=utf-8";
+        extension = "doc";
+        const paragraphs = text
+          .split(/\n+/)
+          .map(p => '<p style="font-family: Arial, sans-serif; font-size: 11pt; line-height: 1.5;">' + escapeHtml(p) + '</p>')
+          .join('\n');
+
+        // Concatenate without literal opening HTML tag blocks that confuse in-page script parsers
+        blobData = '\ufeff' + 
+          '<!DOCTYPE html>' +
+          '<html>' +
+          '<head><meta charset="utf-8"><title>Word Humanized Output</title></head>' +
+          '<body>' + paragraphs + '</body>' +
+          '</html>';
+      }
+
+      const blob = new Blob([blobData], { type: mimeType });
+      const downloadLink = document.createElement('a');
+      downloadLink.href = URL.createObjectURL(blob);
+      downloadLink.download = `word-humanized-output.${extension}`;
+      document.body.appendChild(downloadLink);
+      downloadLink.click();
+      document.body.removeChild(downloadLink);
+      URL.revokeObjectURL(downloadLink.href);
+
+      downloadDropdownEl.classList.add('hidden');
+      showToast(`Downloaded as .${extension}`, "success");
+    }
+
+    // Main Humanize Orchestrator
+    async function executeHumanization() {
+      const rawText = inputTextEl.value.trim();
+      if (!rawText) {
+        showToast("Please enter or paste AI text to humanize.", "warn");
+        inputTextEl.focus();
+        return;
+      }
+
+      const engine = localStorage.getItem('wh_engine') || 'heuristic';
+      const tone = toneSelectEl.value;
+
+      // Loading state
+      btnHumanizeEl.disabled = true;
+      btnHumanizeTextEl.textContent = "Humanizing...";
+      btnHumanizeEl.classList.add('opacity-80', 'cursor-not-allowed');
+
+      try {
+        let result = "";
+
+        if (engine === 'gemini') {
+          const apiKey = localStorage.getItem('wh_gemini_key');
+          if (!apiKey) {
+            showToast("Gemini API key missing. Open settings to enter key or switch to Local Heuristic Engine.", "warn");
+            document.getElementById('settings-modal').classList.remove('hidden');
+            return;
+          }
+          result = await runGeminiHumanizer(rawText, apiKey, tone, currentIntensity);
+        } else {
+          // Offline Heuristic Engine
+          result = runHeuristicHumanizer(rawText, tone, currentIntensity);
+        }
+
+        outputTextEl.value = result;
+        diffContainerEl.innerHTML = buildWordDiff(rawText, result);
+        calculateMetrics();
+        showToast("Content humanized successfully!", "success");
+      } catch (error) {
+        console.error(error);
+        showToast(`Error: ${error.message}`, "error");
+      } finally {
+        btnHumanizeEl.disabled = false;
+        btnHumanizeTextEl.textContent = "Humanize Content";
+        btnHumanizeEl.classList.remove('opacity-80', 'cursor-not-allowed');
+      }
+    }
+
+    // Event Listeners Setup
+    window.addEventListener('DOMContentLoaded', () => {
+      loadSettings();
+
+      // Input metric listeners
+      inputTextEl.addEventListener('input', calculateMetrics);
+      outputTextEl.addEventListener('input', calculateMetrics);
+
+      // Humanize Button
+      btnHumanizeEl.addEventListener('click', executeHumanization);
+
+      // Sample Button
+      document.getElementById('btn-sample').addEventListener('click', () => {
+        inputTextEl.value = SAMPLE_AI_TEXT;
+        fileInfoBadgeEl.classList.add('hidden');
+        calculateMetrics();
+        showToast("Sample AI text loaded.", "info");
+      });
+
+      // Clear Button
+      document.getElementById('btn-clear').addEventListener('click', () => {
+        inputTextEl.value = '';
+        outputTextEl.value = '';
+        fileUploadInputEl.value = '';
+        fileInfoBadgeEl.classList.add('hidden');
+        diffContainerEl.innerHTML = '<p class="text-slate-400 italic">Run humanization to inspect differences.</p>';
+        calculateMetrics();
+        showToast("Panels cleared.", "info");
+      });
+
+      // File Browse & Upload
+      btnBrowseFileEl.addEventListener('click', () => {
+        fileUploadInputEl.click();
+      });
+
+      fileUploadInputEl.addEventListener('change', (e) => {
+        if (e.target.files && e.target.files[0]) {
+          processSelectedFile(e.target.files[0]);
+        }
+      });
+
+      btnRemoveFileEl.addEventListener('click', () => {
+        fileUploadInputEl.value = '';
+        fileInfoBadgeEl.classList.add('hidden');
+      });
+
+      // Drag and Drop File Events
+      dropZoneEl.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropOverlayEl.classList.remove('hidden');
+      });
+
+      dropZoneEl.addEventListener('dragleave', (e) => {
+        if (!dropZoneEl.contains(e.relatedTarget)) {
+          dropOverlayEl.classList.add('hidden');
+        }
+      });
+
+      dropZoneEl.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropOverlayEl.classList.add('hidden');
+        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+          processSelectedFile(e.dataTransfer.files[0]);
+        }
+      });
+
+      // Download Dropdown Interactions
+      btnDownloadMenuEl.addEventListener('click', (e) => {
+        e.stopPropagation();
+        downloadDropdownEl.classList.toggle('hidden');
+      });
+
+      document.addEventListener('click', (e) => {
+        if (!downloadDropdownEl.contains(e.target) && !btnDownloadMenuEl.contains(e.target)) {
+          downloadDropdownEl.classList.add('hidden');
+        }
+      });
+
+      document.getElementById('download-txt').addEventListener('click', () => downloadOutputFile('txt'));
+      document.getElementById('download-md').addEventListener('click', () => downloadOutputFile('md'));
+      document.getElementById('download-docx').addEventListener('click', () => downloadOutputFile('docx'));
+
+      // Paste from clipboard
+      document.getElementById('btn-paste').addEventListener('click', async () => {
+        try {
+          const text = await navigator.clipboard.readText();
+          if (text) {
+            inputTextEl.value = text;
+            fileInfoBadgeEl.classList.add('hidden');
+            calculateMetrics();
+            showToast("Text pasted from clipboard.", "info");
+          }
+        } catch {
+          showToast("Clipboard access denied. Please paste manually using Ctrl+V or Cmd+V.", "warn");
+        }
+      });
+
+      // Copy Output Button
+      document.getElementById('btn-copy').addEventListener('click', () => {
+        const text = outputTextEl.value;
+        if (!text) {
+          showToast("Nothing to copy yet.", "warn");
+          return;
+        }
+
+        // Safe fallback copy
+        const tempTextarea = document.createElement("textarea");
+        tempTextarea.value = text;
+        document.body.appendChild(tempTextarea);
+        tempTextarea.select();
+        try {
+          document.execCommand('copy');
+          const label = document.getElementById('copy-label');
+          label.textContent = "Copied!";
+          setTimeout(() => { label.textContent = "Copy"; }, 2000);
+          showToast("Humanized prose copied to clipboard!", "success");
+        } catch {
+          showToast("Failed to copy automatically.", "error");
+        } finally {
+          document.body.removeChild(tempTextarea);
+        }
+      });
+
+      // Intensity toggles
+      document.querySelectorAll('.intensity-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          document.querySelectorAll('.intensity-btn').forEach(b => {
+            b.classList.remove('bg-white', 'text-slate-900', 'shadow-2xs', 'font-semibold');
+            b.classList.add('text-slate-600');
+          });
+          e.target.classList.add('bg-white', 'text-slate-900', 'shadow-2xs', 'font-semibold');
+          e.target.classList.remove('text-slate-600');
+          currentIntensity = e.target.getAttribute('data-intensity');
+        });
+      });
+
+      // View Switcher (Clean vs Diff)
+      const cleanBtn = document.getElementById('view-clean-btn');
+      const diffBtn = document.getElementById('view-diff-btn');
+
+      cleanBtn.addEventListener('click', () => {
+        currentView = 'clean';
+        cleanBtn.classList.add('bg-white', 'text-slate-900', 'shadow-2xs');
+        cleanBtn.classList.remove('text-slate-600');
+        diffBtn.classList.remove('bg-white', 'text-slate-900', 'shadow-2xs');
+        diffBtn.classList.add('text-slate-600');
+        outputTextEl.classList.remove('hidden');
+        diffContainerEl.classList.add('hidden');
+      });
+
+      diffBtn.addEventListener('click', () => {
+        currentView = 'diff';
+        diffBtn.classList.add('bg-white', 'text-slate-900', 'shadow-2xs');
+        diffBtn.classList.remove('text-slate-600');
+        cleanBtn.classList.remove('bg-white', 'text-slate-900', 'shadow-2xs');
+        cleanBtn.classList.add('text-slate-600');
+        outputTextEl.classList.add('hidden');
+        diffContainerEl.classList.remove('hidden');
+      });
+
+      // Settings Modal toggles
+      document.getElementById('btn-settings').addEventListener('click', () => {
+        document.getElementById('settings-modal').classList.remove('hidden');
+      });
+      document.getElementById('close-settings').addEventListener('click', () => {
+        document.getElementById('settings-modal').classList.add('hidden');
+      });
+      document.getElementById('btn-save-settings').addEventListener('click', saveSettings);
+
+      engineModeEl.addEventListener('change', (e) => {
+        if (e.target.value === 'gemini') {
+          geminiKeyContainerEl.classList.remove('hidden');
+        } else {
+          geminiKeyContainerEl.classList.add('hidden');
+        }
+      });
+    });
+  </script>
+</body>
+</html>
