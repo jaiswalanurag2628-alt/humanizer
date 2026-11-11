@@ -922,6 +922,17 @@ CRITICAL FORMATTING AND ALIGNMENT PRESERVATION RULES:
       // Download Dropdown Interactions
       btnDownloadMenuEl.addEventListener('click', (e) => {
         e.stopPropagation();
+        downloadDropdownEl.classList.toggle('hidden');
+      });
+
+      document.addEventListener('click', () => {
+        downloadDropdownEl.classList.add('hidden');
+      });
+
+      document.getElementById('download-txt').addEventListener('click', () => downloadOutputFile('txt'));
+      document.getElementById('download-md').addEventListener('click', () => downloadOutputFile('md'));
+      document.getElementById('download-docx').addEventListener('click', () => downloadOutputFile('docx'));
+
       // Paste from clipboard (preserves rich text/html if available)
       document.getElementById('btn-paste').addEventListener('click', async () => {
         try {
