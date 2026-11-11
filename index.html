@@ -227,13 +227,14 @@
         </div>
 
         <!-- Textarea (with Drag & Drop Support) -->
-        <div id="drop-zone" class="relative flex-1 p-4 flex flex-col transition-all">
-          <textarea
+        <div id="drop-zone" class="relative flex-1 p-4 flex flex-col transition-all overflow-hidden">
+          <div
             id="input-text"
-            placeholder="Paste your synthetic AI text here, or drag and drop a .txt, .md, or .docx file..."
-            class="w-full flex-1 resize-none border-0 p-0 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-0 text-sm leading-relaxed min-h-[350px] whitespace-pre-wrap font-sans"
+            contenteditable="true"
+            data-placeholder="Paste your synthetic AI text here, or drag and drop a .txt, .md, or .docx file..."
+            class="w-full flex-1 border-0 p-0 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-0 text-sm leading-relaxed min-h-[350px] overflow-y-auto font-sans empty:before:content-[attr(data-placeholder)] empty:before:text-slate-400"
             style="tab-size: 4;"
-          ></textarea>
+          ></div>
           <!-- Drag-over drop message overlay -->
           <div id="drop-overlay" class="absolute inset-2 border-2 border-dashed border-brand-400 bg-brand-50/90 rounded-xl flex flex-col items-center justify-center gap-2 text-brand-700 hidden pointer-events-none z-10">
             <i data-lucide="file-up" class="w-8 h-8 animate-bounce"></i>
@@ -302,17 +303,18 @@
         </div>
 
         <!-- Textarea / Diff Display -->
-        <div class="relative flex-1 p-4 flex flex-col min-h-[350px]">
+        <div class="relative flex-1 p-4 flex flex-col min-h-[350px] overflow-hidden">
           <!-- Standard Editable Output Area -->
-          <textarea
+          <div
             id="output-text"
-            placeholder="Your humanized, authentic prose will appear here after processing..."
-            class="w-full flex-1 resize-none border-0 p-0 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-0 text-sm leading-relaxed whitespace-pre-wrap font-sans"
+            contenteditable="true"
+            data-placeholder="Your humanized, authentic prose will appear here with original formatting..."
+            class="w-full flex-1 border-0 p-0 text-slate-800 focus:outline-none focus:ring-0 text-sm leading-relaxed overflow-y-auto font-sans empty:before:content-[attr(data-placeholder)] empty:before:text-slate-400"
             style="tab-size: 4;"
-          ></textarea>
+          ></div>
 
           <!-- Diff View Box (Hidden by default) -->
-          <div id="diff-container" class="hidden w-full flex-1 overflow-y-auto text-sm leading-relaxed whitespace-pre-wrap font-sans text-slate-800" style="tab-size: 4;">
+          <div id="diff-container" class="hidden w-full flex-1 overflow-y-auto text-sm leading-relaxed font-sans text-slate-800" style="tab-size: 4;">
             <p class="text-slate-400 italic">Run humanization to inspect differences.</p>
           </div>
         </div>
@@ -494,8 +496,8 @@
 
     // Compute Text Metrics
     function calculateMetrics() {
-      const inText = inputTextEl.value.trim();
-      const outText = outputTextEl.value.trim();
+      const inText = inputTextEl.innerText.trim();
+      const outText = outputTextEl.innerText.trim();
 
       const inWords = inText ? inText.split(/\s+/).filter(Boolean).length : 0;
       const inChars = inText.length;
@@ -575,38 +577,46 @@
       return leadingPrefix + transformedCore;
     }
 
-    // Local Algorithmic Humanizer Engine (Preserves Document Structure and Alignment)
-    function runHeuristicHumanizer(rawText, tone, intensity) {
-      if (!rawText) return "";
-
-      // Split into lines to strictly preserve paragraphs, breaks, bullet points, and blank lines
-      const lines = rawText.split('\n');
-      const processedLines = lines.map(line => humanizeLine(line, tone, intensity));
-      return processedLines.join('\n');
+    // Recursively humanize DOM text nodes while strictly preserving bold, italic, center, headings, lists & structure
+    function humanizeDomTree(node, tone, intensity) {
+      if (node.nodeType === Node.TEXT_NODE) {
+        if (node.nodeValue && node.nodeValue.trim().length > 0) {
+          node.nodeValue = humanizeLine(node.nodeValue, tone, intensity);
+        }
+      } else if (node.nodeType === Node.ELEMENT_NODE) {
+        // Skip script or style nodes if any
+        if (node.tagName === 'SCRIPT' || node.tagName === 'STYLE') return;
+        Array.from(node.childNodes).forEach(child => humanizeDomTree(child, tone, intensity));
+      }
     }
 
-    // Google Gemini Direct Humanizer Engine
-    async function runGeminiHumanizer(rawText, apiKey, tone, intensity) {
+    // Local Algorithmic Humanizer Engine with full DOM & Rich Styling Preservation
+    function runHeuristicHumanizerHtml(sourceElement, tone, intensity) {
+      const clone = sourceElement.cloneNode(true);
+      humanizeDomTree(clone, tone, intensity);
+      return clone.innerHTML;
+    }
+
+    // Google Gemini Direct Humanizer Engine (Preserves HTML Formatting & Alignments)
+    async function runGeminiHumanizer(rawHtml, apiKey, tone, intensity) {
       const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
 
-      const systemPrompt = `You are an elite human editor and writer. Your sole job is to rewrite AI-generated text so that it reads indistinguishably from an experienced, natural human writer.
+      const systemPrompt = `You are an elite human editor and writer. Your job is to rewrite AI-generated text inside HTML content to make it read naturally like human writing.
 
-STRICT FORMATTING AND ALIGNMENT RULES:
-1. Maintain the EXACT line breaks, paragraph structure, indentation, list markers, bullet points, and overall document layout as the original.
-2. Drastically vary sentence length (burstiness). Intersperse short 3-6 word statements with longer rhythmic observations.
-3. Purge all stereotypical AI vocabulary: "delve", "tapestry", "furthermore", "moreover", "in conclusion", "testament", "pivotal", "beacon", "foster", "holistic".
-4. Use active voice and natural phrasing. Tone style requested: ${tone}.
-5. Rewrite intensity: ${intensity}.
-6. Use contractions naturally (don't, can't, it's, wouldn't).
-7. Preserve 100% of factual substance, figures, quotes, and names.
-8. Return ONLY the rewritten text without code fences, preambles, or explanations.`;
+CRITICAL FORMATTING AND ALIGNMENT PRESERVATION RULES:
+1. Maintain ALL HTML tags, inline styles, alignments (e.g. style="text-align: center;", style="text-align: right;"), bold (<b>, <strong>), italics (<i>, <em>), headings (<h1>..<h6>), blockquotes, lists (<ul>, <ol>, <li>), and tables EXACTLY where they are.
+2. Only rewrite the textual sentences inside the HTML elements.
+3. Vary sentence length (burstiness) and purge AI cliches ("delve", "tapestry", "moreover", "furthermore", "testament to", "pivotal role").
+4. Tone style: ${tone}. Rewrite intensity: ${intensity}.
+5. Use contractions naturally (don't, can't, it's).
+6. Return ONLY the valid rewritten HTML content without any markdown fences, backticks, or explanations.`;
 
       const payload = {
         contents: [
           {
             role: "user",
             parts: [
-              { text: `${systemPrompt}\n\nOriginal Text:\n${rawText}` }
+              { text: `${systemPrompt}\n\nHTML Content to Humanize:\n${rawHtml}` }
             ]
           }
         ],
@@ -629,7 +639,6 @@ STRICT FORMATTING AND ALIGNMENT RULES:
 
       const data = await response.json();
       let output = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
-      // Strip markdown code fences if inadvertently returned
       output = output.replace(/^```[a-z]*\r?\n/i, '').replace(/\r?\n```$/, '').trim();
       return output;
     }
@@ -644,37 +653,36 @@ STRICT FORMATTING AND ALIGNMENT RULES:
         .replace(/'/g, "&#039;");
     }
 
-    // Generate word-level comparison HTML while strictly respecting newlines and indentation
-    function buildWordDiff(original, humanized) {
-      const origWords = new Set(original.toLowerCase().match(/\b[a-z0-9']+\b/g) || []);
-      
-      const lines = humanized.split('\n');
-      const diffLines = lines.map(line => {
-        if (!line.trim()) return '&nbsp;';
-        
-        // Preserve leading spacing
-        const match = line.match(/^(\s+)/);
-        const leadingSpaces = match ? match[1].replace(/ /g, '&nbsp;').replace(/\t/g, '&nbsp;&nbsp;&nbsp;&nbsp;') : '';
-        const words = line.trim().split(/(\s+)/);
+    // Generate comparison diff while maintaining layout
+    function buildWordDiff(originalText, humanizedElement) {
+      const origWords = new Set(originalText.toLowerCase().match(/\b[a-z0-9']+\b/g) || []);
+      const clone = humanizedElement.cloneNode(true);
 
-        const renderedLine = words.map(chunk => {
-          if (/^\s+$/.test(chunk)) {
-            return chunk.replace(/ /g, '&nbsp;').replace(/\t/g, '&nbsp;&nbsp;&nbsp;&nbsp;');
-          }
-          const clean = chunk.toLowerCase().replace(/[^a-z0-9']/g, '');
-          if (clean && !origWords.has(clean)) {
-            return `<span class="bg-emerald-100 text-emerald-900 font-medium px-1 py-0.5 rounded border border-emerald-200">${escapeHtml(chunk)}</span>`;
-          }
-          return escapeHtml(chunk);
-        }).join('');
+      function highlightTextNodes(node) {
+        if (node.nodeType === Node.TEXT_NODE) {
+          const val = node.nodeValue;
+          if (!val || !val.trim()) return;
+          const span = document.createElement('span');
+          const tokens = val.split(/(\s+)/);
+          span.innerHTML = tokens.map(tok => {
+            if (/^\s+$/.test(tok)) return tok;
+            const clean = tok.toLowerCase().replace(/[^a-z0-9']/g, '');
+            if (clean && !origWords.has(clean)) {
+              return `<span class="bg-emerald-100 text-emerald-900 font-medium px-1 py-0.5 rounded border border-emerald-200">${escapeHtml(tok)}</span>`;
+            }
+            return escapeHtml(tok);
+          }).join('');
+          node.parentNode.replaceChild(span, node);
+        } else if (node.nodeType === Node.ELEMENT_NODE) {
+          Array.from(node.childNodes).forEach(highlightTextNodes);
+        }
+      }
 
-        return leadingSpaces + renderedLine;
-      });
-
-      return diffLines.join('<br>') || '<p class="text-slate-400 italic">No differences detected.</p>';
+      highlightTextNodes(clone);
+      return clone.innerHTML || '<p class="text-slate-400 italic">No differences detected.</p>';
     }
 
-    // File Processing (TXT, MD, DOCX via mammoth.js) with structural integrity
+    // File Processing (TXT, MD, DOCX via mammoth.js) with complete bold, italic & alignment preservation
     async function processSelectedFile(file) {
       if (!file) return;
 
@@ -683,104 +691,101 @@ STRICT FORMATTING AND ALIGNMENT RULES:
       const fileSizeKB = (file.size / 1024).toFixed(1);
 
       try {
-        let extractedContent = "";
+        let extractedHtml = "";
 
         if (fileExt === 'docx') {
-          showToast("Extracting layout and text from Word document...", "info");
+          showToast("Extracting formatting, alignment, and styles...", "info");
           const arrayBuffer = await file.arrayBuffer();
           if (window.mammoth) {
-            // Use extractRawText or convertToHtml to keep original paragraph separators
-            const result = await window.mammoth.convertToHtml({ arrayBuffer: arrayBuffer });
-            const tempDiv = document.createElement('div');
-            tempDiv.innerHTML = result.value || "";
-            
-            // Format paragraphs, headers, and bullet items with preserved newlines
-            const textNodes = [];
-            tempDiv.childNodes.forEach(node => {
-              if (node.nodeType === Node.ELEMENT_NODE) {
-                const tag = node.tagName.toLowerCase();
-                const content = node.innerText || node.textContent || "";
-                if (tag === 'p' || tag.startsWith('h')) {
-                  textNodes.push(content);
-                } else if (tag === 'ul' || tag === 'ol') {
-                  node.querySelectorAll('li').forEach(li => {
-                    textNodes.push("• " + (li.innerText || li.textContent || ""));
-                  });
-                } else {
-                  textNodes.push(content);
-                }
-              } else if (node.nodeType === Node.TEXT_NODE && node.textContent.trim()) {
-                textNodes.push(node.textContent.trim());
-              }
-            });
+            // Options that preserve bold, italic, headings, tables, and alignment classes
+            const options = {
+              styleMap: [
+                "p[style-name='Center'] => p.text-center:fresh",
+                "p[style-name='Centered'] => p.text-center:fresh",
+                "p[style-name='Right'] => p.text-right:fresh",
+                "r[style-name='Strong'] => strong",
+                "r[style-name='Emphasis'] => em"
+              ]
+            };
+            const result = await window.mammoth.convertToHtml({ arrayBuffer: arrayBuffer }, options);
+            extractedHtml = result.value || "";
 
-            extractedContent = textNodes.length > 0 ? textNodes.join('\n\n') : (await window.mammoth.extractRawText({ arrayBuffer: arrayBuffer })).value;
+            // Normalize paragraph styles for consistent visual display and centered text
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = extractedHtml;
+            tempDiv.querySelectorAll('p.text-center').forEach(p => p.style.textAlign = 'center');
+            tempDiv.querySelectorAll('p.text-right').forEach(p => p.style.textAlign = 'right');
+            tempDiv.querySelectorAll('p').forEach(p => {
+              if (!p.style.marginBottom) p.style.marginBottom = '0.75rem';
+            });
+            extractedHtml = tempDiv.innerHTML;
           } else {
             throw new Error("Mammoth library is not loaded.");
           }
         } else if (fileExt === 'txt' || fileExt === 'md' || fileExt === 'markdown') {
-          extractedContent = await file.text();
+          const rawText = await file.text();
+          extractedHtml = rawText
+            .split(/\r?\n/)
+            .map(line => line.trim() ? `<p style="margin-bottom: 0.75rem;">${escapeHtml(line)}</p>` : `<p style="margin-bottom: 0.75rem;">&nbsp;</p>`)
+            .join('');
         } else {
           showToast("Unsupported file type. Please upload .txt, .md, or .docx", "warn");
           return;
         }
 
-        inputTextEl.value = extractedContent;
+        inputTextEl.innerHTML = extractedHtml;
         fileInfoNameEl.textContent = fileName;
         fileInfoSizeEl.textContent = `(${fileSizeKB} KB)`;
         fileInfoBadgeEl.classList.remove('hidden');
         calculateMetrics();
-        showToast(`Loaded ${fileName} with original layout!`, "success");
+        showToast(`Loaded ${fileName} with full formatting and alignment!`, "success");
       } catch (err) {
         console.error("File parsing error:", err);
         showToast(`Failed to parse file: ${err.message}`, "error");
       }
     }
 
-    // File Download Handler (.txt, .md, .docx) strictly maintaining alignment
+    // File Download Handler (.txt, .md, .docx) preserving all rich alignments, bolds, and italics
     function downloadOutputFile(format) {
-      const text = outputTextEl.value;
-      if (!text.trim()) {
-        showToast("No humanized text to download. Humanize your content first.", "warn");
+      const htmlContent = outputTextEl.innerHTML;
+      const textContent = outputTextEl.innerText;
+      if (!textContent.trim()) {
+        showToast("No humanized content to download. Humanize your text first.", "warn");
         return;
       }
 
       let mimeType = "text/plain;charset=utf-8";
-      let blobData = text;
+      let blobData = textContent;
       let extension = format;
 
       if (format === 'md') {
         mimeType = "text/markdown;charset=utf-8";
-        blobData = text;
+        blobData = textContent;
       } else if (format === 'docx') {
-        // Build Word-compliant HTML document with preserved alignment, margins, and line heights
+        // Build Word-compliant HTML file with inline CSS for text-align, bold, italic, margins, and fonts
         mimeType = "application/msword;charset=utf-8";
         extension = "doc";
-        
-        const paragraphs = text
-          .split('\n')
-          .map(line => {
-            if (!line.trim()) {
-              return '<p style="margin: 0; padding: 0; min-height: 14pt;">&nbsp;</p>';
-            }
-            // Check for leading spaces or list markers
-            let style = 'margin: 0 0 10pt 0; font-family: Calibri, Arial, sans-serif; font-size: 11pt; line-height: 1.4; color: #111827;';
-            if (/^\s*[-*•]/.test(line)) {
-              style += ' padding-left: 20pt; text-indent: -10pt;';
-            }
-            return '<p style="' + style + '">' + escapeHtml(line).replace(/  /g, '&nbsp;&nbsp;') + '</p>';
-          })
-          .join('\n');
 
         blobData = '\ufeff' + 
           '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">' +
           '<head><meta charset="utf-8"><title>Word Humanized Output</title>' +
           '<style>' +
-          '@page { size: 8.5in 11in; margin: 1in 1in 1in 1in; mso-header-margin: 0.5in; mso-footer-margin: 0.5in; }' +
-          'body { font-family: Calibri, Arial, sans-serif; font-size: 11pt; line-height: 1.4; }' +
+          '@page { size: 8.5in 11in; margin: 1in; mso-header-margin: 0.5in; mso-footer-margin: 0.5in; }' +
+          'body { font-family: Calibri, Arial, sans-serif; font-size: 11pt; line-height: 1.5; color: #111827; }' +
+          'p { margin: 0 0 10pt 0; }' +
+          '.text-center { text-align: center; }' +
+          '.text-right { text-align: right; }' +
+          'b, strong { font-weight: bold; }' +
+          'i, em { font-style: italic; }' +
+          'u { text-decoration: underline; }' +
+          'h1 { font-size: 18pt; font-weight: bold; margin-bottom: 12pt; }' +
+          'h2 { font-size: 14pt; font-weight: bold; margin-bottom: 8pt; }' +
+          'h3 { font-size: 12pt; font-weight: bold; margin-bottom: 6pt; }' +
+          'ul, ol { margin-top: 0; margin-bottom: 10pt; padding-left: 20pt; }' +
+          'li { margin-bottom: 4pt; }' +
           '</style>' +
           '</head>' +
-          '<body>' + paragraphs + '</body>' +
+          '<body>' + htmlContent + '</body>' +
           '</html>';
       }
 
@@ -794,14 +799,14 @@ STRICT FORMATTING AND ALIGNMENT RULES:
       URL.revokeObjectURL(downloadLink.href);
 
       downloadDropdownEl.classList.add('hidden');
-      showToast(`Downloaded as .${extension}`, "success");
+      showToast(`Downloaded formatted .${extension}`, "success");
     }
 
     // Main Humanize Orchestrator
     async function executeHumanization() {
-      const rawText = inputTextEl.value.trim();
+      const rawText = inputTextEl.innerText.trim();
       if (!rawText) {
-        showToast("Please enter or paste AI text to humanize.", "warn");
+        showToast("Please enter or paste text to humanize.", "warn");
         inputTextEl.focus();
         return;
       }
@@ -809,31 +814,30 @@ STRICT FORMATTING AND ALIGNMENT RULES:
       const engine = localStorage.getItem('wh_engine') || 'heuristic';
       const tone = toneSelectEl.value;
 
-      // Loading state
       btnHumanizeEl.disabled = true;
       btnHumanizeTextEl.textContent = "Humanizing...";
       btnHumanizeEl.classList.add('opacity-80', 'cursor-not-allowed');
 
       try {
-        let result = "";
+        let resultHtml = "";
 
         if (engine === 'gemini') {
           const apiKey = localStorage.getItem('wh_gemini_key');
           if (!apiKey) {
-            showToast("Gemini API key missing. Open settings to enter key or switch to Local Heuristic Engine.", "warn");
+            showToast("Gemini API key missing. Open settings to enter key or use the Built-in Engine.", "warn");
             document.getElementById('settings-modal').classList.remove('hidden');
             return;
           }
-          result = await runGeminiHumanizer(rawText, apiKey, tone, currentIntensity);
+          resultHtml = await runGeminiHumanizer(inputTextEl.innerHTML, apiKey, tone, currentIntensity);
         } else {
-          // Offline Heuristic Engine
-          result = runHeuristicHumanizer(rawText, tone, currentIntensity);
+          // Offline Heuristic Engine traversing DOM nodes
+          resultHtml = runHeuristicHumanizerHtml(inputTextEl, tone, currentIntensity);
         }
 
-        outputTextEl.value = result;
-        diffContainerEl.innerHTML = buildWordDiff(rawText, result);
+        outputTextEl.innerHTML = resultHtml;
+        diffContainerEl.innerHTML = buildWordDiff(rawText, outputTextEl);
         calculateMetrics();
-        showToast("Content humanized successfully!", "success");
+        showToast("Content humanized while retaining all alignments & styling!", "success");
       } catch (error) {
         console.error(error);
         showToast(`Error: ${error.message}`, "error");
@@ -848,25 +852,30 @@ STRICT FORMATTING AND ALIGNMENT RULES:
     window.addEventListener('DOMContentLoaded', () => {
       loadSettings();
 
-      // Input metric listeners
+      // Input metric listeners for contenteditable containers
       inputTextEl.addEventListener('input', calculateMetrics);
       outputTextEl.addEventListener('input', calculateMetrics);
 
       // Humanize Button
       btnHumanizeEl.addEventListener('click', executeHumanization);
 
-      // Sample Button
+      // Sample Button with Centered & Formatted text
       document.getElementById('btn-sample').addEventListener('click', () => {
-        inputTextEl.value = SAMPLE_AI_TEXT;
+        inputTextEl.innerHTML = `
+          <h2 style="text-align: center; font-weight: bold; margin-bottom: 0.75rem;">AI Era Transformation</h2>
+          <p style="text-align: center; font-style: italic; margin-bottom: 0.75rem;">A comprehensive technological report</p>
+          <p style="margin-bottom: 0.75rem;">In today's fast-paced digital era, it is <strong>essential to delve into</strong> the transformative realm of artificial intelligence. Furthermore, this <em>revolutionary paradigm</em> serves as a testament to human innovation, playing a <strong>pivotal role</strong> in shaping modern productivity.</p>
+          <p style="margin-bottom: 0.75rem;">In conclusion, navigating this intricate tapestry of computational advancements is paramount for fostering sustainable development across diverse industries.</p>
+        `;
         fileInfoBadgeEl.classList.add('hidden');
         calculateMetrics();
-        showToast("Sample AI text loaded.", "info");
+        showToast("Formatted sample loaded.", "info");
       });
 
       // Clear Button
       document.getElementById('btn-clear').addEventListener('click', () => {
-        inputTextEl.value = '';
-        outputTextEl.value = '';
+        inputTextEl.innerHTML = '';
+        outputTextEl.innerHTML = '';
         fileUploadInputEl.value = '';
         fileInfoBadgeEl.classList.add('hidden');
         diffContainerEl.innerHTML = '<p class="text-slate-400 italic">Run humanization to inspect differences.</p>';
@@ -913,57 +922,57 @@ STRICT FORMATTING AND ALIGNMENT RULES:
       // Download Dropdown Interactions
       btnDownloadMenuEl.addEventListener('click', (e) => {
         e.stopPropagation();
-        downloadDropdownEl.classList.toggle('hidden');
-      });
-
-      document.addEventListener('click', (e) => {
-        if (!downloadDropdownEl.contains(e.target) && !btnDownloadMenuEl.contains(e.target)) {
-          downloadDropdownEl.classList.add('hidden');
-        }
-      });
-
-      document.getElementById('download-txt').addEventListener('click', () => downloadOutputFile('txt'));
-      document.getElementById('download-md').addEventListener('click', () => downloadOutputFile('md'));
-      document.getElementById('download-docx').addEventListener('click', () => downloadOutputFile('docx'));
-
-      // Paste from clipboard
+      // Paste from clipboard (preserves rich text/html if available)
       document.getElementById('btn-paste').addEventListener('click', async () => {
         try {
+          const clipboardItems = await navigator.clipboard.read();
+          for (const item of clipboardItems) {
+            if (item.types.includes('text/html')) {
+              const blob = await item.getType('text/html');
+              const html = await blob.text();
+              inputTextEl.innerHTML = html;
+              fileInfoBadgeEl.classList.add('hidden');
+              calculateMetrics();
+              showToast("Pasted rich text with formatting!", "success");
+              return;
+            }
+          }
+          // Plain text fallback
           const text = await navigator.clipboard.readText();
           if (text) {
-            inputTextEl.value = text;
+            inputTextEl.innerHTML = text.split('\n').map(l => `<p style="margin-bottom: 0.75rem;">${escapeHtml(l)}</p>`).join('');
             fileInfoBadgeEl.classList.add('hidden');
             calculateMetrics();
             showToast("Text pasted from clipboard.", "info");
           }
         } catch {
-          showToast("Clipboard access denied. Please paste manually using Ctrl+V or Cmd+V.", "warn");
+          showToast("Please paste directly into the box using Ctrl+V or Cmd+V.", "warn");
         }
       });
 
-      // Copy Output Button
+      // Copy Output Button (copies both HTML formatting and plain text)
       document.getElementById('btn-copy').addEventListener('click', () => {
-        const text = outputTextEl.value;
-        if (!text) {
+        const text = outputTextEl.innerText;
+        if (!text.trim()) {
           showToast("Nothing to copy yet.", "warn");
           return;
         }
 
-        // Safe fallback copy
-        const tempTextarea = document.createElement("textarea");
-        tempTextarea.value = text;
-        document.body.appendChild(tempTextarea);
-        tempTextarea.select();
         try {
+          const range = document.createRange();
+          range.selectNodeContents(outputTextEl);
+          const sel = window.getSelection();
+          sel.removeAllRanges();
+          sel.addRange(range);
           document.execCommand('copy');
+          sel.removeAllRanges();
+
           const label = document.getElementById('copy-label');
           label.textContent = "Copied!";
           setTimeout(() => { label.textContent = "Copy"; }, 2000);
-          showToast("Humanized prose copied to clipboard!", "success");
+          showToast("Humanized prose and formatting copied to clipboard!", "success");
         } catch {
           showToast("Failed to copy automatically.", "error");
-        } finally {
-          document.body.removeChild(tempTextarea);
         }
       });
 
